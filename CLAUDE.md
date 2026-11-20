@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this repo is
 
 Spring Boot REST API backend (Java 21, Spring Boot 4.1, Spring Data JPA) for a "business trips" domain
-(employees, trips, flights, meetings). It is **RefCard 03** of a CI/CD teaching sequence
+(employees, trips, flights, meetings). It is the backend of **RefCard 05** (deployed to AWS: ECR → ECS
+Fargate, RDS MariaDB; see README "Deployment auf AWS") of a CI/CD teaching sequence
 (`docs/future/RefCard-03-RefCard-05-own-repos.md`); `docs/exercises/EX-01/02/03` are the actual student
 exercises this repo exists to support (EC2 deploy, Docker Hub, ECS+RDS). Application code itself is a
 secondary concern to the CI/CD lesson — see "Deliberately imperfect code" below before "fixing" things.

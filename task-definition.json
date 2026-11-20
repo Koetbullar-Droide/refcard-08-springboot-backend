@@ -16,14 +16,21 @@
         { "name": "SPRING_PROFILES_ACTIVE", "value": "mariadb" },
         {
           "name": "SPRING_DATASOURCE_URL",
-          "value": "jdbc:mariadb://springboot-backend.cvuu880kiazf.us-east-1.rds.amazonaws.com:3306/db_biztrips?sslMode=trust"
+          "value": "jdbc:mariadb://springboot-backend.cvuu880kiazf.us-east-1.rds.amazonaws.com:3306/db_biztrips?sslMode=trust&createDatabaseIfNotExist=true"
         },
-        { "name": "SPRING_DATASOURCE_USERNAME", "value": "admin" }
+        {
+          "name": "APP_CORS_ALLOWED_ORIGINS",
+          "value": "http://refcard05-frontend-alb-321770531.us-east-1.elb.amazonaws.com"
+        }
       ],
       "secrets": [
         {
+          "name": "SPRING_DATASOURCE_USERNAME",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:891377136681:secret:rds!db-70a23a3b-ffb8-4deb-9cb1-f3423223f2ba-Zujpjh:username::"
+        },
+        {
           "name": "SPRING_DATASOURCE_PASSWORD",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:891377136681:secret:rds!db-70a23a3b-ffb8-4deb-9cb1-f3423223f2ba-Zujpjh"
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:891377136681:secret:rds!db-70a23a3b-ffb8-4deb-9cb1-f3423223f2ba-Zujpjh:password::"
         }
       ],
       "logConfiguration": {

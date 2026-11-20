@@ -34,7 +34,7 @@ jobs:
           cache: maven
       - run: ./mvnw -B clean package -DskipTests
 
-  # ---------- EX-03: ECR + ECS (Fargate) ----------
+  # ---------- RefCard 05: Image nach ECR, Deployment auf ECS (Fargate) ----------
   deploy-ecs:
     name: Image nach ECR pushen und ECS-Service aktualisieren
     runs-on: ubuntu-latest
@@ -74,12 +74,12 @@ jobs:
         with:
           task-definition: task-definition.json
           container-name: biztrips-backend
-          image: ${{ steps.ecr-login.outputs.registry }}/biztrips-backend:${{ github.sha }}
+          image: ${{ steps.ecr-login.outputs.registry }}/springboot-backend:${{ github.sha }}
 
       - name: ECS-Service deployen
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-task-def.outputs.task-definition }}
-          cluster: biztrips-backend-cluster
+          cluster: biztripsBackend
           service: biztrips-backend-service
           wait-for-service-stability: true

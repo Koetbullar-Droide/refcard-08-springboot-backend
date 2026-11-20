@@ -1,0 +1,11 @@
+target
+data
+.git
+.github
+.idea
+*.iml
+docs
+docker
+scripts
+*.pem
+task-definition.json
