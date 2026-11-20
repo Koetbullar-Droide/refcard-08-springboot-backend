@@ -1,0 +1,40 @@
+{
+  "family": "biztrips-backend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::891377136681:role/LabRole",
+  "taskRoleArn": "arn:aws:iam::891377136681:role/LabRole",
+  "containerDefinitions": [
+    {
+      "name": "biztrips-backend",
+      "image": "891377136681.dkr.ecr.us-east-1.amazonaws.com/springboot-backend:latest",
+      "portMappings": [{ "containerPort": 8080, "protocol": "tcp" }],
+      "essential": true,
+      "environment": [
+        { "name": "SPRING_PROFILES_ACTIVE", "value": "mariadb" },
+        {
+          "name": "SPRING_DATASOURCE_URL",
+          "value": "jdbc:mariadb://springboot-backend.cvuu880kiazf.us-east-1.rds.amazonaws.com:3306/db_biztrips?sslMode=trust"
+        },
+        { "name": "SPRING_DATASOURCE_USERNAME", "value": "admin" }
+      ],
+      "secrets": [
+        {
+          "name": "SPRING_DATASOURCE_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:891377136681:secret:rds!db-70a23a3b-ffb8-4deb-9cb1-f3423223f2ba-Zujpjh"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/biztrips-backend",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}
