@@ -81,6 +81,25 @@ class S3ImageStorageTest {
 	}
 
 	@Test
+	@SuppressWarnings("unchecked")
+	void accessDeniedBecomesStorageUnavailable() {
+		S3Exception denied = (S3Exception) S3Exception.builder().statusCode(403).message("Access Denied").build();
+		when(s3.putObject(any(Consumer.class), any(RequestBody.class))).thenThrow(denied);
+		when(s3.getObjectAsBytes(any(Consumer.class))).thenThrow(denied);
+		when(s3.headObject(any(Consumer.class))).thenThrow(denied);
+
+		assertThatThrownBy(() -> storage.store("image/png", new ByteArrayInputStream(new byte[] {1}), 1))
+				.isInstanceOf(StorageUnavailableException.class)
+				.hasMessageContaining("PutObject")
+				.hasCause(denied);
+		assertThatThrownBy(() -> storage.load(ImageKeys.newKey("image/png")))
+				.isInstanceOf(StorageUnavailableException.class);
+		assertThatThrownBy(() -> storage.delete(ImageKeys.newKey("image/png")))
+				.isInstanceOf(StorageUnavailableException.class);
+		verify(s3, never()).deleteObject(any(Consumer.class));
+	}
+
+	@Test
 	void missingBucketFailsFast() {
 		assertThatThrownBy(() -> new S3ImageStorage(s3, " "))
 				.isInstanceOf(IllegalStateException.class)

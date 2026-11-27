@@ -53,6 +53,21 @@ class ImageControllerTest {
 	}
 
 	@Test
+	void storageErrorsAre503WithMessage() throws Exception {
+		ImageStorage broken = new LocalImageStorage(dir.toString()) {
+			@Override
+			public java.util.List<String> list() {
+				throw new StorageUnavailableException("Bilder-Storage nicht verfügbar (S3 ListObjectsV2)", null);
+			}
+		};
+		MockMvc brokenMvc = MockMvcBuilders.standaloneSetup(new ImageController(broken)).build();
+
+		brokenMvc.perform(get("/v1/images"))
+				.andExpect(status().isServiceUnavailable())
+				.andExpect(content().string(org.hamcrest.Matchers.containsString("ListObjectsV2")));
+	}
+
+	@Test
 	void unknownOrInvalidKeyIs404() throws Exception {
 		mvc.perform(get("/v1/images/does-not-exist.png")).andExpect(status().isNotFound());
 		mvc.perform(delete("/v1/images/does-not-exist.png")).andExpect(status().isNotFound());

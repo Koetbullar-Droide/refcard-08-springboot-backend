@@ -3,6 +3,10 @@ package ch.bbw.trips.storage;
 import java.io.InputStream;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,6 +14,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -32,6 +37,8 @@ public class S3ImageStorage implements ImageStorage {
 	/** Alle Bilder liegen unter diesem Prefix; die Bucket-Policy erlaubt nur Zugriff darauf. */
 	static final String PREFIX = "images/";
 
+	private static final Logger log = LoggerFactory.getLogger(S3ImageStorage.class);
+
 	private final S3Client s3;
 	private final String bucket;
 
@@ -53,8 +60,8 @@ public class S3ImageStorage implements ImageStorage {
 	@Override
 	public String store(String contentType, InputStream content, long size) {
 		String key = ImageKeys.newKey(contentType);
-		s3.putObject(b -> b.bucket(bucket).key(PREFIX + key).contentType(contentType),
-				RequestBody.fromInputStream(content, size));
+		call("PutObject", key, () -> s3.putObject(b -> b.bucket(bucket).key(PREFIX + key).contentType(contentType),
+				RequestBody.fromInputStream(content, size)));
 		return key;
 	}
 
@@ -64,7 +71,8 @@ public class S3ImageStorage implements ImageStorage {
 			return Optional.empty();
 		}
 		try {
-			ResponseBytes<GetObjectResponse> object = s3.getObjectAsBytes(b -> b.bucket(bucket).key(PREFIX + key));
+			ResponseBytes<GetObjectResponse> object = call("GetObject", key,
+					() -> s3.getObjectAsBytes(b -> b.bucket(bucket).key(PREFIX + key)));
 			return Optional.of(new StoredImage(object.asByteArray(), ImageKeys.contentTypeFor(key)));
 		} catch (NoSuchKeyException e) {
 			return Optional.empty();
@@ -73,11 +81,12 @@ public class S3ImageStorage implements ImageStorage {
 
 	@Override
 	public List<String> list() {
-		return s3.listObjectsV2Paginator(b -> b.bucket(bucket).prefix(PREFIX)).contents().stream()
+		return call("ListObjectsV2", PREFIX, () -> s3.listObjectsV2Paginator(b -> b.bucket(bucket).prefix(PREFIX))
+				.contents().stream()
 				.map(o -> o.key().substring(PREFIX.length()))
 				.filter(ImageKeys::isValid)
 				.sorted()
-				.toList();
+				.toList());
 	}
 
 	@Override
@@ -92,9 +101,36 @@ public class S3ImageStorage implements ImageStorage {
 			if (e.statusCode() == 404) {
 				return false;
 			}
-			throw e;
+			throw unavailable("HeadObject", key, e);
+		} catch (SdkException e) {
+			throw unavailable("HeadObject", key, e);
 		}
-		s3.deleteObject(b -> b.bucket(bucket).key(PREFIX + key));
+		call("DeleteObject", key, () -> s3.deleteObject(b -> b.bucket(bucket).key(PREFIX + key)));
 		return true;
+	}
+
+	/**
+	 * Führt einen S3-Aufruf aus und übersetzt AWS-Fehler (fehlende Rechte, Netzwerk, abgelaufene
+	 * Credentials) in eine {@link StorageUnavailableException}. "Objekt fehlt" (NoSuchKey) wird
+	 * durchgereicht, weil das ein normaler 404-Fall ist.
+	 */
+	private <T> T call(String operation, String key, Supplier<T> s3Call) {
+		try {
+			return s3Call.get();
+		} catch (NoSuchKeyException e) {
+			throw e;
+		} catch (SdkException e) {
+			throw unavailable(operation, key, e);
+		}
+	}
+
+	private StorageUnavailableException unavailable(String operation, String key, SdkException e) {
+		String hint = "";
+		if (e instanceof S3Exception s3e && s3e.statusCode() == 403) {
+			hint = " – Zugriff verweigert: Bucket-Policy (scripts/s3-bucket-policy.json) und Task-Rolle prüfen";
+		}
+		log.error("S3 {} auf s3://{}/{}{} fehlgeschlagen{}: {}", operation, bucket,
+				key.startsWith(PREFIX) ? "" : PREFIX, key, hint, e.getMessage());
+		return new StorageUnavailableException("Bilder-Storage nicht verfügbar (S3 " + operation + ")", e);
 	}
 }
