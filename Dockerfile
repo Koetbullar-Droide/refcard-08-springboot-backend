@@ -1,13 +1,14 @@
 # --- Stage 1: Build ---
-FROM eclipse-temurin:21-jdk AS build
+# Offizielles Maven-Image: Maven ist schon drin, der Wrapper muss nichts herunterladen
+FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /app
 
-COPY .mvn/ .mvn/
-COPY mvnw pom.xml ./
-RUN ./mvnw dependency:go-offline
+# Erst nur pom.xml -> Abhängigkeiten landen in einem eigenen (gecachten) Layer
+COPY pom.xml ./
+RUN mvn -B -q dependency:go-offline
 
 COPY src ./src
-RUN ./mvnw clean package -DskipTests
+RUN mvn -B -q clean package -DskipTests
 
 # --- Stage 2: Runtime ---
 FROM eclipse-temurin:21-jre-alpine
