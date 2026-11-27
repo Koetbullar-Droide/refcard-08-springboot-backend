@@ -8,9 +8,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Nie zwei Deployments gleichzeitig auf denselben ECS-Service (z. B. Push auf main + Tag-Push)
+# Nie zwei Runs gleichzeitig auf denselben ECS-Service (z. B. Push auf main + Tag-Push):
+# bewusst OHNE github.ref, sonst laufen main- und Tag-Run parallel und lösen sich gegenseitig ab
 concurrency:
-  group: deploy-backend-${{ github.ref }}
+  group: deploy-backend
   cancel-in-progress: false
 
 env:
@@ -29,7 +30,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0          # alle Tags holen, sonst findet git describe nichts
       # v1.2.0           -> genau auf einem Release-Tag
@@ -48,8 +49,8 @@ jobs:
     name: Tests ausführen
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -61,8 +62,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -78,7 +79,7 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # AWS Academy Learner Lab: kein OIDC möglich -> temporäre Lab-Credentials als Secrets
       - name: AWS-Credentials aus Learner-Lab-Session beziehen
@@ -101,19 +102,32 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       # Image-Tags: <version> (aus Git-Tag), <commit-sha>, latest
+      # Buildx + GitHub-Actions-Cache: Maven-Abhängigkeiten liegen in einem gecachten Layer,
+      # dadurch weniger Downloads von Maven Central (vermeidet "429 Too Many Requests")
+      - uses: docker/setup-buildx-action@v3
+
       - name: Image bauen und nach ECR pushen
-        id: image
-        env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          provenance: false   # nur das Image selbst, keine zusätzlichen Attestation-Einträge in ECR
+          build-args: |
+            APP_VERSION=${{ env.VERSION }}
+            GIT_SHA=${{ github.sha }}
+          tags: |
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.VERSION }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - id: image
         run: |
-          IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY"
-          docker build \
-            --build-arg APP_VERSION="$VERSION" \
-            --build-arg GIT_SHA="$GITHUB_SHA" \
-            -t "$IMAGE:$VERSION" -t "$IMAGE:$GITHUB_SHA" -t "$IMAGE:latest" .
-          docker push --all-tags "$IMAGE"
-          echo "image=$IMAGE:$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Image: \`$IMAGE:$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+          IMAGE="${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:$VERSION"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "Image: \`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Task-Definition mit neuem Image aktualisieren
         id: render-task-def

@@ -40,3 +40,6 @@ docker/database/
 
 ### Lokaler Bilder-Storage (app.storage.type=local) ###
 data/
+
+### Lokale Compose-Overrides (docker-compose.yml) ###
+.env

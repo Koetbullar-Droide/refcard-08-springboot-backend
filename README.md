@@ -6,9 +6,20 @@ Trips, Flüge, Meetings). Teil der CI/CD-Übungssequenz **RefCard 02–05**
 — dieses Repository ist der **Backend-Teil von RefCard 05**: Spring Boot Backend,
 als Container auf ECS Fargate, Datenbank auf RDS (MariaDB).
 
-Das Frontend liegt im eigenen Repo
-[`refcard-05-react-vite`](https://github.com/Koetbullar-Droide/refcard-05-react-vite),
-die lokale Gesamtumgebung (Frontend + Backend + MariaDB) im Ordner `refcard-05-compose`.
+## Überblick RefCard 05
+
+| Teil | Repo | Läuft auf AWS als |
+| --- | --- | --- |
+| Frontend (React + Vite, nginx) | [refcard-05-react-vite](https://github.com/Koetbullar-Droide/refcard-05-react-vite) | ECR `react-vite-frontend` → ECS `biztripsFrontend/biztrips-frontend-service` |
+| Backend (Spring Boot) | dieses Repo | ECR `springboot-backend` → ECS `biztripsBackend/biztrips-backend-service`, RDS MariaDB, S3 |
+| Lokale Gesamtumgebung | dieses Repo, [`docker-compose.yml`](docker-compose.yml) | – (nur lokal, siehe [unten](#gesamtsystem-lokal-starten-frontend--backend--datenbank)) |
+
+**Releases**: Beide Repos werden mit SemVer-Git-Tags versioniert, der Tag wird zum Image-Tag in ECR.
+Ein Release der Gesamtapplikation besteht aus je einem Frontend- und Backend-Tag:
+
+| Release | Frontend | Backend | Inhalt |
+| --- | --- | --- | --- |
+| RefCard 05 | `v1.0.0` | `v1.0.0` | ECS-Deployment, RDS, S3-Bilder-Storage, Health-Checks, Smoke-Tests |
 
 ## Tech-Stack
 
@@ -36,6 +47,58 @@ docker compose -f docker/docker-compose.yml up -d
 - MariaDB läuft dann auf `localhost:3306` (Datenbank `db_biztrips`, User `root`, Passwort `bbw123`)
 - phpMyAdmin ist unter [http://localhost:8082](http://localhost:8082) erreichbar (gleiche Zugangsdaten)
 - Die Demo-Daten werden nur beim allerersten Start eingefügt — ein Neustart der Applikation dupliziert sie nicht
+
+### Gesamtsystem lokal starten (Frontend + Backend + Datenbank)
+
+Frontend und Backend liegen in getrennten Repos. [`docker-compose.yml`](docker-compose.yml) in diesem
+Repo baut beide und startet sie zusammen mit MariaDB. Voraussetzung: Docker (Compose v2) und beide
+Repos nebeneinander geklont:
+
+```
+RefCard05/
+├── refcard-08-springboot-backend/  <- git clone git@github.com:Koetbullar-Droide/refcard-08-springboot-backend.git
+└── refcard-05-react-vite/          <- git clone git@github.com:Koetbullar-Droide/refcard-05-react-vite.git
+```
+
+```bash
+cd refcard-08-springboot-backend
+docker compose up --build
+```
+
+| Dienst | URL |
+| --- | --- |
+| Frontend | http://localhost:3000 (Version: `/version.json`) |
+| Backend | http://localhost:8080/v1/trips · Health: `/actuator/health` · Version: `/actuator/info` |
+| Bild hochladen | `curl -F file=@bild.jpg http://localhost:8080/v1/images` (lokal auf Volume, auf AWS im S3-Bucket) |
+| phpMyAdmin (optional) | `docker compose --profile tools up` → http://localhost:8082 (root / bbw123) |
+
+- **Startreihenfolge über Healthchecks**: MariaDB → Backend (wartet, bis die DB gesund ist) → Frontend
+  (wartet auf das Backend). Der erste Start dauert wegen des Backend-Builds einige Minuten.
+- **Sinnvolle Defaults**: läuft ohne `.env`. Optional `.env.example` nach `.env` kopieren, um Passwort,
+  Pfad zum Frontend-Repo oder fertige Images zu setzen.
+- Lokal liegen Bilder auf einem Docker-Volume (`APP_STORAGE_TYPE=local`), auf AWS in S3. Es sind
+  keine AWS-Zugangsdaten nötig.
+
+**Variante: fertige Images aus ECR** (z. B. genau das Release `v1.0.0`): in `.env` `BACKEND_IMAGE`/
+`FRONTEND_IMAGE` einkommentieren, dann
+
+```bash
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 891377136681.dkr.ecr.us-east-1.amazonaws.com
+docker compose pull && docker compose up
+```
+
+Hinweis: `VITE_API_BASE_URL` ist im ECR-Frontend-Image fest auf das AWS-Backend einkompiliert. Für
+den rein lokalen Betrieb darum die Variante mit `--build` verwenden.
+
+**Prüfen und stoppen**:
+
+```bash
+docker compose ps                           # alle Dienste "healthy"
+curl http://localhost:8080/actuator/info    # Backend-Version
+curl http://localhost:3000/version.json     # Frontend-Version
+docker compose down                         # stoppen (Daten bleiben)
+docker compose down -v                      # stoppen und Daten löschen
+```
 
 ### Tests ausführen
 
@@ -83,7 +146,8 @@ Internet ─► ALB refcard05-backend-alb :80 ─► Target Group (ip, :8080, /a
 - **Pipeline** ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)):
   `version` + `test` → `build` → `deploy-ecs` (Lab-Session prüfen, Image nach ECR, Task Definition rendern,
   ECS-Service rolling aktualisieren, Smoke-Test). `deploy-ecs` läuft bei Push auf `main` und bei Tags `v*.*.*`,
-  nicht bei Pull Requests. Maven-Abhängigkeiten werden gecacht.
+  nicht bei Pull Requests. Maven-Abhängigkeiten werden gecacht (`setup-java` und Docker-Layer-Cache
+  über `docker/build-push-action` mit `type=gha`). Main- und Tag-Runs laufen nacheinander (`concurrency`).
 - **Datenbank `db_biztrips`** legt das Backend beim ersten Start selbst an (`createDatabaseIfNotExist=true`),
   Tabellen über `ddl-auto=update`, Demo-Daten über den Seed in `BusinessTripsBackendApplication`.
 - **CORS**: lokal `*`; auf ECS per `APP_CORS_ALLOWED_ORIGINS` auf die Frontend-ALB-URL eingeschränkt.
@@ -116,7 +180,7 @@ git push origin v1.1.0        # startet die Pipeline -> Image springboot-backend
 ```
 
 Frontend und Backend werden unabhängig versioniert. Welche Versionen zusammengehören, steht in der
-Release-Tabelle im Compose-Repo.
+Release-Tabelle oben im [Überblick](#überblick-refcard-05).
 
 ### Deployment absichern und überwachen
 
@@ -209,25 +273,41 @@ ersetzen und `permissions: id-token: write` setzen.
 
 ## Nachweise (Screenshots)
 
+Alle Screenshots liegen in [`docs/screenshots/`](docs/screenshots/).
+
 | Was | Screenshot |
 | --- | --- |
-| Commits und Tags | ![Commits](docs/screenshots/be-01-commits.jpg) |
-| Pipeline-Run (alle Jobs grün, Version, Smoke-Test) | ![Workflow](docs/screenshots/be-02-workflow-run.jpg) |
+| Commits | ![Commits](docs/screenshots/be-01-commits.jpg) |
+| Git-Tag `v1.0.0` | ![Tags](docs/screenshots/be-01-tags.jpg) |
+| Pipeline-Run für `v1.0.0` (alle Jobs grün) | ![Workflow](docs/screenshots/be-02-workflow-run.jpg) |
+| Run-Zusammenfassung: Version, Image in ECR, Smoke-Test OK | ![Workflow-Summary](docs/screenshots/be-02-workflow-summary.jpg) |
 | GitHub Secrets (Lab-Credentials) | ![Secrets](docs/screenshots/be-03-secrets.jpg) |
-| ECR-Repository mit Versions-Tags | ![ECR](docs/screenshots/be-04-ecr.jpg) |
-| ECS-Service (Deployment, laufender Task) | ![ECS](docs/screenshots/be-05-ecs-service.jpg) |
-| ECS-Task (Container healthy) | ![ECS-Task](docs/screenshots/be-06-ecs-task-health.jpg) |
-| RDS-Instanz | ![RDS](docs/screenshots/be-07-rds.jpg) |
-| S3-Bucket mit Bildern | ![S3](docs/screenshots/be-08-s3-bucket.jpg) |
-| S3-Bucket-Policy | ![S3-Policy](docs/screenshots/be-09-s3-policy.jpg) |
-| API über den ALB (`/actuator/info`, `/v1/trips`) | ![API](docs/screenshots/be-10-api.jpg) |
+| ECR-Repository: Image mit Tags `v1.0.0`, Commit-SHA, `latest` | ![ECR](docs/screenshots/be-04-ecr.jpg) |
+| ECS-Service: Deployment mit Circuit Breaker und Health-Checks | ![ECS](docs/screenshots/be-05-ecs-service.jpg) |
+| ECS-Task: Running, Health-Status *Healthy* | ![ECS-Task](docs/screenshots/be-06-ecs-task-health.jpg) |
+| RDS-Instanz (MariaDB, verwaltetes Secret) | ![RDS](docs/screenshots/be-07-rds.jpg) |
+| S3-Bucket: über die API hochgeladene Bilder unter `images/` | ![S3](docs/screenshots/be-08-s3-bucket.jpg) |
+| S3-Bucket-Policy (Least Privilege) | ![S3-Policy](docs/screenshots/be-09-s3-policy.jpg) |
+| API über den ALB: `/actuator/info` meldet die deployte Version | ![API](docs/screenshots/be-10-api.png) |
+| Lokal mit Docker Compose: App auf `localhost:3000` | ![Compose App](docs/screenshots/compose-01-app.jpg) |
+| Lokal mit Docker Compose: Backend-Health (MariaDB verbunden) | ![Compose Health](docs/screenshots/compose-02-health.png) |
+
+Lokal `docker compose ps` nach dem Start:
+
+```
+SERVICE    STATUS                    PORTS
+backend    Up 16 seconds (healthy)   0.0.0.0:8080->8080/tcp
+frontend   Up 10 seconds (healthy)   0.0.0.0:3000->80/tcp
+mariadb    Up 22 seconds (healthy)   3306/tcp
+```
 
 ## Projektstruktur
 
 ```
 src/main/java/ch/bbw/trips/   Applikationscode (Controller, Entities, Repositories, DTOs)
-docker/docker-compose.yml     MariaDB + phpMyAdmin für die lokale Entwicklung
-Dockerfile                    Multi-Stage-Build (JDK baut das JAR → JRE-Alpine-Image)
+docker-compose.yml            Gesamtumgebung lokal: Frontend + Backend + MariaDB
+docker/docker-compose.yml     nur MariaDB + phpMyAdmin (für ./mvnw spring-boot:run)
+Dockerfile                    Multi-Stage-Build (Maven-Image baut das JAR → JRE-Alpine-Image)
 task-definition.json          ECS-Task-Definition (Fargate, RDS, Secrets Manager)
 .github/workflows/deploy.yml  CI/CD: test → build → ECR → ECS
 src/main/java/ch/bbw/trips/storage/  Bilder-Endpoint + Storage (lokal / S3)

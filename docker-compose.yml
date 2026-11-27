@@ -1,0 +1,83 @@
+# RefCard05 – lokale Gesamtumgebung (Frontend + Backend + MariaDB) aus zwei getrennten Repos.
+# Liegt im Backend-Repo; das Frontend-Repo muss daneben geklont sein (../refcard-05-react-vite).
+# (docker/docker-compose.yml startet dagegen nur MariaDB + phpMyAdmin für ./mvnw spring-boot:run)
+#
+#   Variante A (Standard): beide Repos werden lokal gebaut
+#       docker compose up --build
+#   Variante B: fertige Images aus ECR verwenden (siehe README, braucht Lab-Credentials)
+#       docker compose pull && docker compose up
+#
+# Frontend: http://localhost:3000   Backend: http://localhost:8080/v1/trips   phpMyAdmin: http://localhost:8082
+name: refcard05
+
+services:
+  mariadb:
+    image: mariadb:11.8
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_PASSWORD:-bbw123}
+      MARIADB_DATABASE: db_biztrips
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    image: ${BACKEND_IMAGE:-refcard05/backend:local}
+    build:
+      context: .
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: mariadb
+      SPRING_DATASOURCE_URL: jdbc:mariadb://mariadb:3306/db_biztrips
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-bbw123}
+      # Lokal: Bilder auf einem Volume (RefCard 04). Auf ECS: APP_STORAGE_TYPE=s3 (RefCard 05)
+      APP_STORAGE_TYPE: local
+      APP_STORAGE_LOCAL_DIR: /data/images
+    volumes:
+      - image-data:/data/images
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-refcard05/frontend:local}
+    build:
+      context: ${FRONTEND_PATH:-../refcard-05-react-vite}
+      args:
+        # wird beim Build ins JS einkompiliert; der Browser ruft das Backend auf dem Host auf
+        VITE_API_BASE_URL: http://localhost:8080/
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    profiles: ["tools"]   # nur mit: docker compose --profile tools up
+    depends_on:
+      - mariadb
+    environment:
+      PMA_HOST: mariadb
+    ports:
+      - "8082:80"
+
+volumes:
+  db-data:
+  image-data:
