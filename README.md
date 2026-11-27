@@ -20,6 +20,7 @@ Ein Release der Gesamtapplikation besteht aus je einem Frontend- und Backend-Tag
 | Release | Frontend | Backend | Inhalt |
 | --- | --- | --- | --- |
 | RefCard 05 | `v1.0.0` | `v1.0.0` | ECS-Deployment, RDS, S3-Bilder-Storage, Health-Checks, Smoke-Tests |
+| RefCard 05 (Abgabe) | `v1.1.0` | `v1.1.0` | Pipeline mit Docker-Layer-Cache und Concurrency pro Service, Backend-Build mit Maven-Image, Docker Compose im Backend-Repo, Doku mit allen Screenshots |
 
 ## Tech-Stack
 
@@ -79,7 +80,7 @@ docker compose up --build
 - Lokal liegen Bilder auf einem Docker-Volume (`APP_STORAGE_TYPE=local`), auf AWS in S3. Es sind
   keine AWS-Zugangsdaten nötig.
 
-**Variante: fertige Images aus ECR** (z. B. genau das Release `v1.0.0`): in `.env` `BACKEND_IMAGE`/
+**Variante: fertige Images aus ECR** (z. B. genau das Release `v1.1.0`): in `.env` `BACKEND_IMAGE`/
 `FRONTEND_IMAGE` einkommentieren, dann
 
 ```bash
