@@ -1,0 +1,65 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowBackendTaskRoleObjectAccess",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::891377136681:role/LabRole"
+      },
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::refcard05-biztrips-images-891377136681/images/*"
+    },
+    {
+      "Sid": "AllowBackendTaskRoleListImagesPrefix",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::891377136681:role/LabRole"
+      },
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::refcard05-biztrips-images-891377136681",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": "images/*"
+        }
+      }
+    },
+    {
+      "Sid": "DenyEveryoneElse",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::refcard05-biztrips-images-891377136681",
+        "arn:aws:s3:::refcard05-biztrips-images-891377136681/*"
+      ],
+      "Condition": {
+        "StringNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::891377136681:role/LabRole",
+            "arn:aws:iam::891377136681:role/voclabs"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "DenyInsecureTransport",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::refcard05-biztrips-images-891377136681",
+        "arn:aws:s3:::refcard05-biztrips-images-891377136681/*"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "false"
+        }
+      }
+    }
+  ]
+}

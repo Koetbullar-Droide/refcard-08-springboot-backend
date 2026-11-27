@@ -39,7 +39,9 @@ scanned.
 Sub-packages: `repo` (entities + controllers + Spring Data repositories, all in one package),
 `repo.main` (just `SpringWebConfig` — CORS — and the unused `GeneralConstants`), `dtos`, `ex`
 (the 404 exception + `@ControllerAdvice`), `web` (a legacy `HomeController` returning Thymeleaf-style view
-names that don't have templates — dead/broken, not part of the REST API).
+names that don't have templates — dead/broken, not part of the REST API), `storage` (`/v1/images` endpoint
+behind the `ImageStorage` interface; `LocalImageStorage` or `S3ImageStorage` is picked via
+`app.storage.type` = `local` (default) / `s3` with `@ConditionalOnProperty` — exactly one bean exists).
 
 ### Two datasource profiles, one seed data path
 

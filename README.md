@@ -61,7 +61,8 @@ Basis-Pfad: `/v1`
 ```
 Internet ─► ALB refcard05-backend-alb :80 ─► Target Group (ip, :8080, /actuator/health)
                                               └─► ECS-Service biztrips-backend-service (Fargate)
-                                                     └─► RDS MariaDB springboot-backend :3306
+                                                     ├─► RDS MariaDB springboot-backend :3306
+                                                     └─► S3 refcard05-biztrips-images-891377136681/images/*
 ```
 
 | Ressource             | Name                                                                                                  |
@@ -80,6 +81,36 @@ Internet ─► ALB refcard05-backend-alb :80 ─► Target Group (ip, :8080, /a
   Tabellen über `ddl-auto=update`, Demo-Daten über den Seed in `BusinessTripsBackendApplication`.
 - **CORS**: lokal `*`; auf ECS per `APP_CORS_ALLOWED_ORIGINS` auf die Frontend-ALB-URL eingeschränkt.
 - **Rollen**: Learner Lab erlaubt keine eigenen IAM-Rollen → `LabRole` als Execution- und Task-Role.
+
+### Bilder-Storage: lokal (RefCard 04) → S3 (RefCard 05)
+
+Der Endpoint `/v1/images` spricht nur mit dem Interface `ImageStorage` (`ch.bbw.trips.storage`).
+Welche Implementierung aktiv ist, entscheidet `APP_STORAGE_TYPE`:
+
+| `APP_STORAGE_TYPE` | Implementierung | Wo |
+| --- | --- | --- |
+| `local` (Default) | `LocalImageStorage` | Verzeichnis `APP_STORAGE_LOCAL_DIR` bzw. Docker-Volume (lokal, Compose) |
+| `s3` | `S3ImageStorage` | Bucket `APP_STORAGE_S3_BUCKET` unter `images/` (ECS) |
+
+Warum S3 statt Volume auf ECS: Fargate-Tasks haben nur ein flüchtiges Dateisystem. Bei 2 Tasks hätte
+jeder seine eigenen Bilder, und bei jedem Deployment wären sie weg. S3 wird von allen Tasks geteilt
+und überlebt Deployments.
+
+- **Keine Zugangsdaten im Code**: Der AWS SDK holt sie über die Default Credential Chain, auf ECS
+  aus der Task-Rolle `LabRole`.
+- **Least Privilege trotz Learner Lab**: Eine eigene Rolle ist nicht möglich. Darum schränkt die
+  [Bucket-Policy](scripts/s3-bucket-policy.json) ein: nur `LabRole` darf `images/*` lesen, schreiben
+  und löschen, alle anderen Principals (ausser der Lab-Konsole `voclabs`) sind gesperrt, nur HTTPS.
+- Bucket ist privat (Block Public Access) und mit SSE-S3 verschlüsselt. Bilder werden über das
+  Backend ausgeliefert (`GET /v1/images/{key}`), nicht direkt aus S3.
+- Schlüssel generiert der Server (UUID + Endung), Uploads sind auf Bildtypen beschränkt.
+
+S3-Variante lokal ausprobieren (nutzt die Lab-Credentials aus `~/.aws`):
+
+```bash
+APP_STORAGE_TYPE=s3 APP_STORAGE_S3_BUCKET=refcard05-biztrips-images-891377136681 ./mvnw spring-boot:run
+curl -F file=@bild.png http://localhost:8080/v1/images
+```
 
 ### Learner-Lab-Credentials (statt OIDC)
 
@@ -100,7 +131,8 @@ docker/docker-compose.yml     MariaDB + phpMyAdmin für die lokale Entwicklung
 Dockerfile                    Multi-Stage-Build (JDK baut das JAR → JRE-Alpine-Image)
 task-definition.json          ECS-Task-Definition (Fargate, RDS, Secrets Manager)
 .github/workflows/deploy.yml  CI/CD: test → build → ECR → ECS
-scripts/                      AWS-Setup und Learner-Lab-Secrets
+src/main/java/ch/bbw/trips/storage/  Bilder-Endpoint + Storage (lokal / S3)
+scripts/                      AWS-Setup, S3-Bucket-Policy und Learner-Lab-Secrets
 docs/exercises/               CI/CD-Übungen (EX-01 EC2, EX-02 Docker Hub, EX-03 ECS/RDS)
 docs/reviews/                 Code-Reviews
 docs/future/                  Planungsentscheidungen für RefCard 03–05
